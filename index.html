@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>AI Dashboard — Single File</title>
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    /* ----------------------------------
+       Simple reset & utility
+       ----------------------------------*/
+    :root{
+      --bg:#0f1724; --card:#0b1220; --muted:#9aa4b2; --accent:#6ee7b7; --glass:rgba(255,255,255,0.03);
+      --glass-2:rgba(255,255,255,0.02);
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;font-family:Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;color:#e6eef6;background:linear-gradient(180deg,var(--bg),#071021);}
+    a{color:inherit}
+
+    /* Layout */
+    .app{display:grid;grid-template-columns:260px 1fr;gap:20px;padding:20px;height:100vh}
+    .sidebar{background:linear-gradient(180deg,var(--card),#071021);border-radius:14px;padding:18px;box-shadow:0 6px 18px rgba(2,6,23,0.6);}
+    .main{overflow:auto;padding:18px}
+
+    /* Sidebar content */
+    .brand{display:flex;gap:12px;align-items:center;margin-bottom:12px}
+    .logo{width:48px;height:48px;border-radius:10px;background:linear-gradient(135deg,#6ee7b7,#60a5fa);display:flex;align-items:center;justify-content:center;font-weight:700;color:#04202a}
+    .brand h1{font-size:14px;margin:0}
+    .muted{color:var(--muted);font-size:13px}
+
+    nav ul{list-style:none;padding:0;margin:12px 0}
+    nav li{padding:8px;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:10px}
+    nav li:hover{background:var(--glass)}
+
+    /* Controls panel */
+    .panel{background:var(--glass);padding:12px;border-radius:10px;margin-top:14px}
+    label{display:block;font-size:13px;margin-bottom:6px}
+    .row{display:flex;gap:8px;align-items:center}
+    input[type=range]{width:100%}
+    select,input[type=file]{width:100%;padding:8px;border-radius:6px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit}
+
+    /* Main grid */
+    .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+    .card{background:linear-gradient(180deg,var(--card),#05101a);padding:16px;border-radius:12px;box-shadow:0 6px 24px rgba(2,6,23,0.6);}
+    .kpi{display:flex;flex-direction:column;gap:8px}
+    .kpi h2{margin:0;font-size:20px}
+    .kpi .small{font-size:12px;color:var(--muted)}
+
+    /* Charts */
+    .chart-wrap{height:220px}
+    canvas{max-width:100%}
+
+    /* Table */
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:8px;text-align:left;border-bottom:1px dashed rgba(255,255,255,0.03);font-size:13px}
+    th{color:var(--muted)}
+
+    /* Logs */
+    .logs{height:160px;overflow:auto;background:linear-gradient(180deg,var(--glass-2),transparent);padding:10px;border-radius:8px;font-family:monospace;font-size:12px}
+
+    /* Responsive */
+    @media (max-width:980px){.app{grid-template-columns:1fr;}.grid{grid-template-columns:repeat(2,1fr)} }
+    @media (max-width:640px){.grid{grid-template-columns:1fr}.sidebar{display:none}}
+
+    /* Buttons */
+    .btn{display:inline-block;padding:8px 12px;border-radius:8px;background:linear-gradient(90deg,#60a5fa,#6ee7b7);color:#04202a;font-weight:600;border:none;cursor:pointer}
+    .btn.ghost{background:transparent;border:1px solid rgba(255,255,255,0.04);color:var(--muted)}
+    .small-btn{padding:6px 8px;font-size:13px}
+
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="logo">AI</div>
+        <div>
+          <h1>AI Dashboard</h1>
+          <div class="muted">Realtime model & metrics</div>
+        </div>
+      </div>
+
+      <nav>
+        <ul>
+          <li id="nav-overview">Overview</li>
+          <li id="nav-trends">Trends</li>
+          <li id="nav-models">Models</li>
+          <li id="nav-datasets">Datasets</li>
+          <li id="nav-settings">Settings</li>
+        </ul>
+      </nav>
+
+      <div class="panel">
+        <label>Model</label>
+        <select id="modelSelect">
+          <option value="gpt-small">GPT-Small</option>
+          <option value="gpt-medium" selected>GPT-Medium</option>
+          <option value="gpt-large">GPT-Large</option>
+        </select>
+
+        <label style="margin-top:10px">Temperature <span id="tempVal">0.7</span></label>
+        <input id="temp" type="range" min="0" max="1" step="0.01" value="0.7" />
+
+        <label style="margin-top:10px">Max Tokens <span id="maxTokVal">256</span></label>
+        <input id="maxTok" type="range" min="16" max="2048" step="16" value="256" />
+
+        <div style="margin-top:10px;display:flex;gap:8px">
+          <button class="btn small-btn" id="runSim">Run Simulation</button>
+          <button class="btn ghost small-btn" id="resetSim">Reset</button>
+        </div>
+
+        <div style="margin-top:10px">
+          <label>Upload dataset (CSV)</label>
+          <input id="fileInput" type="file" accept="text/csv" />
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div class="muted">Active users</div>
+          <div id="activeUsers">128</div>
+        </div>
+        <div style="height:8px;background:rgba(255,255,255,0.03);border-radius:6px;margin-top:8px;overflow:hidden">
+          <div id="activeBar" style="height:100%;width:45%;background:linear-gradient(90deg,#60a5fa,#6ee7b7)"></div>
+        </div>
+      </div>
+
+    </aside>
+
+    <main class="main">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div>
+          <h2 style="margin:0">Overview</h2>
+          <div class="muted">Live view of model performance & resource usage</div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center">
+          <button class="btn ghost" id="downloadCSV">Export predictions</button>
+          <button class="btn" id="toggleTheme">Theme</button>
+        </div>
+      </div>
+
+      <section class="grid">
+        <div class="card kpi">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <div class="small muted">Requests / min</div>
+              <h2 id="rpm">420</h2>
+            </div>
+            <div style="text-align:right">
+              <div class="small muted">Latency (ms)</div>
+              <h2 id="latency">124</h2>
+            </div>
+          </div>
+          <div style="margin-top:12px" class="chart-wrap"><canvas id="spark"></canvas></div>
+        </div>
+
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <div class="muted">Model accuracy</div>
+              <h2 id="accuracy">87.4%</h2>
+            </div>
+            <div style="text-align:right">
+              <div class="muted">Loss</div>
+              <h2 id="loss">0.24</h2>
+            </div>
+          </div>
+          <div style="margin-top:12px" class="chart-wrap"><canvas id="accChart"></canvas></div>
+        </div>
+
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <div class="muted">Resource</div>
+              <h2 id="gpu">GPU 72%</h2>
+            </div>
+            <div style="text-align:right">
+              <div class="muted">Memory</div>
+              <h2 id="ram">12.3GB</h2>
+            </div>
+          </div>
+          <div style="margin-top:12px" class="chart-wrap"><canvas id="resChart"></canvas></div>
+        </div>
+
+        <div class="card" style="grid-column:span 2">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <div class="muted">Predictions over time</div>
+              <h2>Next 24h</h2>
+            </div>
+            <div>
+              <label class="muted">Granularity</label>
+              <select id="granularity" style="min-width:140px">
+                <option>Hourly</option>
+                <option selected>15 min</option>
+                <option>5 min</option>
+              </select>
+            </div>
+          </div>
+          <div style="margin-top:12px;height:320px"><canvas id="mainChart"></canvas></div>
+        </div>
+
+        <div class="card" style="grid-column:span 1">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <div>
+              <div class="muted">Recent predictions</div>
+              <h3 style="margin:0">Top samples</h3>
+            </div>
+            <div><button class="btn ghost small-btn" id="clearTable">Clear</button></div>
+          </div>
+
+          <div style="max-height:220px;overflow:auto">
+            <table>
+              <thead><tr><th>id</th><th>input</th><th>pred</th><th>conf</th></tr></thead>
+              <tbody id="predTable">
+                <!-- dynamic rows -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card" style="grid-column:span 2">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <div><div class="muted">System logs</div><h3 style="margin:0">Live</h3></div>
+            <div><button class="btn small-btn" id="clearLogs">Clear</button></div>
+          </div>
+          <div class="logs" id="logs"></div>
+        </div>
+
+      </section>
+
+    </main>
+  </div>
+
+<script>
+  // -------------------------------
+  // Small single-file dashboard behavior
+  // -------------------------------
+
+  // Helper: random with range
+  const rand = (min,max)=>Math.random()*(max-min)+min;
+
+  // KPI sparkline
+  const sparkCtx = document.getElementById('spark').getContext('2d');
+  const spark = new Chart(sparkCtx,{
+    type:'line',data:{labels:Array.from({length:30},(_,i)=>i),datasets:[{data:Array.from({length:30},()=>rand(200,600)), tension:0.3,pointRadius:0,borderWidth:2}]},options:{plugins:{legend:{display:false}},scales:{x:{display:false},y:{display:false}},elements:{line:{borderColor:'rgba(110,231,183,0.9)'}}}
+  });
+
+  // Accuracy chart
+  const accCtx = document.getElementById('accChart').getContext('2d');
+  const accChart = new Chart(accCtx,{type:'doughnut',data:{labels:['Acc','Other'],datasets:[{data:[87.4,12.6],cutout:'70%'}]},options:{plugins:{legend:{display:false}}}});
+
+  // Resource chart
+  const resCtx = document.getElementById('resChart').getContext('2d');
+  const resChart = new Chart(resCtx,{type:'bar',data:{labels:['GPU','CPU','IO'],datasets:[{data:[72,48,22]}]},options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,max:100}}}});
+
+  // Main timeseries
+  const mainCtx = document.getElementById('mainChart').getContext('2d');
+  const mainChart = new Chart(mainCtx,{type:'line',data:{labels:[],datasets:[{label:'Predictions',data:[],tension:0.3,pointRadius:2}]},options:{plugins:{legend:{display:false}},scales:{x:{display:true},y:{beginAtZero:false}}}});
+
+  // Populate initial table and logs
+  const predTable = document.getElementById('predTable');
+  const logs = document.getElementById('logs');
+
+  function addLog(txt){
+    const now = new Date().toLocaleTimeString();
+    logs.innerHTML = `<div>[${now}] ${txt}</div>` + logs.innerHTML;
+  }
+
+  function addPrediction(id,input,pred,conf){
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${id}</td><td>${input}</td><td>${pred}</td><td>${(conf*100).toFixed(1)}%</td>`;
+    predTable.prepend(tr);
+  }
+
+  // Simulate realtime updates
+  let tick = 0;
+  function tickUpdate(){
+    // update spark
+    spark.data.datasets[0].data.shift();
+    spark.data.datasets[0].data.push(rand(200,600));
+    spark.update('none');
+
+    // update KPIs
+    const rpm = Math.round(rand(300,900)); document.getElementById('rpm').innerText = rpm;
+    const latency = Math.round(rand(80,300)); document.getElementById('latency').innerText = latency;
+
+    // acc/loss slight drift
+    const acc = (87.4 + Math.sin(tick/10)*0.6 + rand(-0.2,0.2)).toFixed(2);
+    document.getElementById('accuracy').innerText = `${acc}%`;
+    document.getElementById('loss').innerText = (0.24 + Math.cos(tick/15)*0.02).toFixed(3);
+
+    // resources
+    const gpu = Math.round(rand(40,88)); document.getElementById('gpu').innerText = `GPU ${gpu}%`;
+    document.getElementById('ram').innerText = `${(rand(6,20)).toFixed(1)}GB`;
+    resChart.data.datasets[0].data = [gpu, Math.round(rand(20,70)), Math.round(rand(5,40))];
+    resChart.update('none');
+
+    // main chart append
+    if(mainChart.data.labels.length>48){mainChart.data.labels.shift();mainChart.data.datasets[0].data.shift()}
+    mainChart.data.labels.push(new Date().toLocaleTimeString());
+    mainChart.data.datasets[0].data.push(Math.round(rand(0.2,1.0)*100));
+    mainChart.update('none');
+
+    // occasionally add predictions
+    if(Math.random()>0.7){
+      const id = Math.floor(rand(10000,99999));
+      addPrediction(id, 'input snippet', 'label_'+Math.round(rand(0,5)), Math.random()*0.4+0.6);
+      addLog('Prediction served id='+id);
+    }
+
+    tick++;
+  }
+
+  const interval = setInterval(tickUpdate,1500);
+
+  // Controls
+  document.getElementById('temp').addEventListener('input',e=>document.getElementById('tempVal').innerText = e.target.value);
+  document.getElementById('maxTok').addEventListener('input',e=>document.getElementById('maxTokVal').innerText = e.target.value);
+  document.getElementById('runSim').addEventListener('click',()=>{addLog('Simulation started');});
+  document.getElementById('resetSim').addEventListener('click',()=>{addLog('Simulation reset');document.getElementById('predTable').innerHTML='';});
+  document.getElementById('clearLogs').addEventListener('click',()=>logs.innerHTML='');
+  document.getElementById('clearTable').addEventListener('click',()=>predTable.innerHTML='');
+
+  // File upload - parse CSV simple
+  document.getElementById('fileInput').addEventListener('change',async(e)=>{
+    const f = e.t
